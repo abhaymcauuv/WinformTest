@@ -27,7 +27,7 @@ namespace Company
                 FROM Company 
                 WHERE IsActive = 1";
 
-                var companies = await ExecuteQueryAsync(query);
+                var companies = await DatabaseHelper.ExecuteQueryAsync(query);
                 dataGridViewCompanies.DataSource = companies;
                 ConfigureGridColumns();
                 AddActionColumn();
@@ -128,8 +128,8 @@ namespace Company
 
                 var parameters = new[] { new SqlParameter("@CompanyId", companyId) };
 
-                await ExecuteNonQueryAsync(deactivateContacts, parameters);
-                await ExecuteNonQueryAsync(deactivateCompany, parameters);
+                await DatabaseHelper.ExecuteNonQueryAsync(deactivateContacts, parameters);
+                await DatabaseHelper.ExecuteNonQueryAsync(deactivateCompany, parameters);
 
                 await LoadCompaniesAsync();
                 ShowInfo("Company and associated contacts were successfully deactivated!");
@@ -140,42 +140,7 @@ namespace Company
             }
         }
 
-        private async Task<DataTable> ExecuteQueryAsync(string query, SqlParameter[] parameters = null)
-        {
-            var connectionString = ConfigurationManager.ConnectionStrings["CompanyDb"].ConnectionString;
-
-            using (var connection = new SqlConnection(connectionString))
-            using (var command = new SqlCommand(query, connection))
-            {
-                if (parameters != null)
-                    command.Parameters.AddRange(parameters);
-
-                var dataTable = new DataTable();
-                await connection.OpenAsync().ConfigureAwait(false);
-
-                using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
-                {
-                    dataTable.Load(reader);
-                }
-
-                return dataTable;
-            }
-        }
-
-        private async Task ExecuteNonQueryAsync(string query, SqlParameter[] parameters)
-        {
-            var connectionString = ConfigurationManager.ConnectionStrings["CompanyDb"].ConnectionString;
-
-            using (var connection = new SqlConnection(connectionString))
-            using (var command = new SqlCommand(query, connection))
-            {
-                if (parameters != null)
-                    command.Parameters.AddRange(parameters);
-
-                await connection.OpenAsync().ConfigureAwait(false);
-                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
-            }
-        }
+       
 
         private Image LoadImage(string relativePath)
         {
@@ -263,8 +228,6 @@ namespace Company
                 MessageBox.Show($"Error searching companies: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-
-
 
         private void btnReset_Click(object sender, EventArgs e)
         {
