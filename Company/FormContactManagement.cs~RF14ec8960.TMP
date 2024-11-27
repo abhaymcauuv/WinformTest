@@ -1,0 +1,258 @@
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Data.SqlClient;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace Company
+{
+    public partial class FormContactManagement : Form
+    {
+        private int _companyId;
+        private int _contactId;
+
+        public FormContactManagement(int companyId)
+        {
+            InitializeComponent();
+            _companyId = companyId;
+            LoadContactsAsync();
+        }
+
+        private void FormContactManagement_Load(object sender, EventArgs e)
+        {
+            LoadContactsAsync();
+        }
+
+        private void btnSearch_Click(object sender, EventArgs e)
+        {
+            string searchText = txtSearch.Text;
+            SearchContacts(searchText);
+        }
+
+        private void btnDeleteContact_Click(object sender, EventArgs e)
+        {
+            if (dataGridViewContacts.SelectedRows.Count > 0)
+            {
+                int contactId = Convert.ToInt32(dataGridViewContacts.SelectedRows[0].Cells["ContactID"].Value);
+            }
+            else
+            {
+                MessageBox.Show("Please select a contact to delete.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        public async Task LoadContactsAsync()
+        {
+            try
+            {
+                string query = @"SELECT ContactID, FirstName, LastName, Telephone, Email 
+                         FROM Contact 
+                         WHERE IsActive = 1 AND CompanyID = @CompanyID";
+                var parameters = new[] { new SqlParameter("@CompanyID", _companyId) };
+                DataTable contacts = await DatabaseHelper.ExecuteQueryAsync(query, parameters);
+                dataGridViewContacts.DataSource = contacts;
+
+                AddEditDeleteButtons();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading contact: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void AddEditDeleteButtons()
+        {
+            string editIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "edit.png");
+            if (!dataGridViewContacts.Columns.Contains("btnEdit"))
+            {
+                DataGridViewImageColumn btnEdit = new DataGridViewImageColumn();
+                btnEdit.Name = "btnEdit";
+                btnEdit.HeaderText = "Action";
+                btnEdit.Image = Image.FromFile(editIconPath);
+                btnEdit.ToolTipText = "Edit";
+                dataGridViewContacts.Columns.Add(btnEdit);
+            }
+
+            string deleteIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "bin.png");
+            if (!dataGridViewContacts.Columns.Contains("btnDelete"))
+            {
+                DataGridViewImageColumn btnDelete = new DataGridViewImageColumn();
+                btnDelete.Name = "btnDelete";
+                btnDelete.HeaderText = "Action";
+                btnDelete.Image = Image.FromFile(deleteIconPath);
+                btnDelete.ToolTipText = "Delete";
+                dataGridViewContacts.Columns.Add(btnDelete);
+            }
+
+            dataGridViewContacts.CellContentClick += (sender, e) =>
+            {
+                if (e.RowIndex >= 0)
+                {
+                    if (e.ColumnIndex == dataGridViewContacts.Columns["btnEdit"].Index)
+                    {
+                        int contactId = Convert.ToInt32(dataGridViewContacts.Rows[e.RowIndex].Cells["ContactID"].Value);
+                        EditContact(contactId);
+                    }
+                    else if (e.ColumnIndex == dataGridViewContacts.Columns["btnDelete"].Index)
+                    {
+                        int contactId = Convert.ToInt32(dataGridViewContacts.Rows[e.RowIndex].Cells["ContactID"].Value);
+                        DeleteContact(contactId);
+                    }
+                }
+            };
+        }
+
+        private void SearchContacts(string searchText)
+        {
+            string query = "SELECT ContactID, FirstName, LastName, Telephone, Email " +
+                           "FROM Contact WHERE IsActive = 1 AND CompanyID = @CompanyID AND " +
+                           "(FirstName LIKE @SearchText OR LastName LIKE @SearchText OR Telephone LIKE @SearchText OR Email LIKE @SearchText)";
+            var parameters = new[]
+            {
+                new SqlParameter("@CompanyID", _companyId),
+                new SqlParameter("@SearchText", "%" + searchText + "%")
+            };
+
+            DataTable contacts = DatabaseHelper.ExecuteQuery(query, parameters);
+            dataGridViewContacts.DataSource = contacts;
+
+            AddEditDeleteButtons();
+        }
+        private async Task SearchContactsAsync(string searchText)
+        {
+            try
+            {
+                string query = @"SELECT ContactID, FirstName, LastName, Telephone, Email 
+                         FROM Contact 
+                         WHERE IsActive = 1 AND CompanyID = @CompanyID AND 
+                         (FirstName LIKE @SearchText OR LastName LIKE @SearchText OR 
+                          Telephone LIKE @SearchText OR Email LIKE @SearchText)";
+                var parameters = new[]
+                {
+                    new SqlParameter("@CompanyID", _companyId),
+                    new SqlParameter("@SearchText", $"%{searchText}%")
+                };
+
+                DataTable contacts = await DatabaseHelper.ExecuteQueryAsync(query, parameters);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error searching contact: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+
+        private void btnReset_Click(object sender, EventArgs e)
+        {
+            txtSearch.Text = string.Empty;
+            LoadContactsAsync();
+        }
+
+        private void EditContact(int contactId)
+        {
+            _contactId = contactId;
+            string query = "SELECT FirstName, LastName, Telephone, Email FROM Contact WHERE ContactID = @ContactID AND IsActive = 1";
+            var parameters = new[] { new SqlParameter("@ContactID", contactId) };
+            DataTable contactData = DatabaseHelper.ExecuteQuery(query, parameters);
+
+            if (contactData.Rows.Count > 0)
+            {
+                txtFirstName.Text = contactData.Rows[0]["FirstName"].ToString();
+                txtLastName.Text = contactData.Rows[0]["LastName"].ToString();
+                txtPhone.Text = contactData.Rows[0]["Telephone"].ToString();
+                txtEmail.Text = contactData.Rows[0]["Email"].ToString();
+            }
+
+            btnSave.Text = "Update";
+        }
+
+        private void DeleteContact(int contactId)
+        {
+            var result = MessageBox.Show($"Are you sure you want to delete Contact ID: {contactId}?",
+                                         "Confirm Deletion", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+            if (result == DialogResult.Yes)
+            {
+                string query = "UPDATE Contact SET IsActive = 0 WHERE ContactID = @ContactID";
+                DatabaseHelper.ExecuteNonQuery(query, new[] { new SqlParameter("@ContactID", contactId) });
+                LoadContacts();
+                MessageBox.Show("Contact deleted successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private void btnSave_Click(object sender, EventArgs e)
+        {
+            string firstName = txtFirstName.Text.Trim();
+            string lastName = txtLastName.Text.Trim();
+            string phone = txtPhone.Text.Trim();
+            string email = txtEmail.Text.Trim();
+            string createdBy = "Jag"; 
+            string modifiedBy = "Jag"; 
+            DateTime currentDate = DateTime.Now;
+
+            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName) ||
+                string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(email))
+            {
+                MessageBox.Show("Please fill out all fields.");
+                return;
+            }
+
+            string query;
+            SqlParameter[] parameters;
+
+            if (_contactId == 0)
+            {
+                query = "INSERT INTO Contact (FirstName, LastName, Telephone, Email, CompanyID, CreatedBy, CreatedOn) " +
+                        "VALUES (@FirstName, @LastName, @Phone, @Email, @CompanyID, @CreatedBy, @CreatedOn)";
+                parameters = new[]
+                {
+                    new SqlParameter("@FirstName", firstName),
+                    new SqlParameter("@LastName", lastName),
+                    new SqlParameter("@Phone", phone),
+                    new SqlParameter("@Email", email),
+                    new SqlParameter("@CompanyID", _companyId),
+                    new SqlParameter("@CreatedBy", createdBy),
+                    new SqlParameter("@CreatedOn", currentDate)
+                };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+                MessageBox.Show("Contact saved successfully.");
+            }
+            else
+            {
+                query = "UPDATE Contact SET FirstName = @FirstName, LastName = @LastName, Telephone = @Phone, Email = @Email, " +
+                        "ModifiedBy = @ModifiedBy, ModifiedOn = @ModifiedOn WHERE ContactID = @ContactID";
+                parameters = new[]
+                {
+                    new SqlParameter("@FirstName", firstName),
+                    new SqlParameter("@LastName", lastName),
+                    new SqlParameter("@Phone", phone),
+                    new SqlParameter("@Email", email),
+                    new SqlParameter("@ModifiedBy", modifiedBy),
+                    new SqlParameter("@ModifiedOn", currentDate),
+                    new SqlParameter("@ContactID", _contactId)
+                };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+                MessageBox.Show("Contact updated successfully.");
+            }
+
+            txtFirstName.Clear();
+            txtLastName.Clear();
+            txtPhone.Clear();
+            txtEmail.Clear();
+
+            LoadContacts();
+
+            _contactId = 0;
+            btnSave.Text = "Save";
+        }
+
+    }
+}

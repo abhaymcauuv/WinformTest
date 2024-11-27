@@ -1,0 +1,194 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.Reflection.Emit;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace Company
+{
+    public partial class FormCompany : Form
+    {
+        private readonly int? companyId;
+
+        public FormCompany(int? companyId = null)
+        {
+            InitializeComponent();
+            this.companyId = companyId;
+
+            if (companyId != null)
+            {
+                _ = LoadCompanyDetailsAsync();
+                ToggleEditMode(false);
+            }
+            else
+            {
+                btnCancel.Visible = false;
+                ToggleEditMode(true);
+            }
+        }
+
+        private async Task LoadCompanyDetailsAsync()
+        {
+            try
+            {
+                string query = "SELECT * FROM Company WHERE CompanyID = @CompanyID";
+                var parameters = new[] { new SqlParameter("@CompanyID", companyId) };
+
+                DataTable company = await DatabaseHelper.ExecuteQueryAsync(query, parameters);
+                if (company.Rows.Count > 0)
+                {
+                    PopulateFields(company.Rows[0]);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Error loading company details: {ex.Message}");
+            }
+        }
+
+        private void PopulateFields(DataRow row)
+        {
+            txtCompanyName.Text = row["CompanyName"].ToString();
+            txtAddressLine1.Text = row["AddressLine1"].ToString();
+            txtAddressLine2.Text = row["AddressLine2"].ToString();
+            txtZipCode.Text = row["ZipCode"].ToString();
+            txtTelephone.Text = row["Telephone"].ToString();
+        }
+
+        private async void btnSave_Click(object sender, EventArgs e)
+        {
+            if (!ValidateInputs())
+                return;
+
+            try
+            {
+                string query;
+                var parameters = new List<SqlParameter>
+            {
+                new SqlParameter("@CompanyName", txtCompanyName.Text),
+                new SqlParameter("@AddressLine1", txtAddressLine1.Text),
+                new SqlParameter("@AddressLine2", txtAddressLine2.Text),
+                new SqlParameter("@ZipCode", txtZipCode.Text),
+                new SqlParameter("@Telephone", txtTelephone.Text)
+            };
+
+                if (companyId == null)
+                {
+                    query = @"INSERT INTO Company 
+                            (CompanyName, AddressLine1, AddressLine2, ZipCode, Telephone, CreatedBy) 
+                          VALUES 
+                            (@CompanyName, @AddressLine1, @AddressLine2, @ZipCode, @Telephone, 'Admin')";
+                }
+                else
+                {
+                    query = @"UPDATE Company 
+                          SET CompanyName = @CompanyName, AddressLine1 = @AddressLine1, AddressLine2 = @AddressLine2, 
+                              ZipCode = @ZipCode, Telephone = @Telephone, ModifiedOn = GETDATE(), ModifiedBy = 'Admin' 
+                          WHERE CompanyID = @CompanyID";
+                    parameters.Add(new SqlParameter("@CompanyID", companyId));
+                }
+
+                await DatabaseHelper.ExecuteNonQueryAsync(query, parameters.ToArray());
+                ShowMessage("Company saved successfully!", "Success");
+                this.Close();
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Error saving company: {ex.Message}");
+            }
+        }
+
+        private bool ValidateInputs()
+        {
+            if (string.IsNullOrWhiteSpace(txtCompanyName.Text) ||
+                string.IsNullOrWhiteSpace(txtAddressLine1.Text) ||
+                string.IsNullOrWhiteSpace(txtZipCode.Text) ||
+                string.IsNullOrWhiteSpace(txtTelephone.Text))
+            {
+                ShowMessage("Please fill out all required fields.", "Validation Error", MessageBoxIcon.Warning);
+                return false;
+            }
+
+            if (!Regex.IsMatch(txtZipCode.Text, "^[0-9]+$") || txtZipCode.Text.Length > 6)
+            {
+                ShowMessage("Zip Code should only contain up to 6 digits.", "Validation Error", MessageBoxIcon.Warning);
+                return false;
+            }
+
+            if (!Regex.IsMatch(txtTelephone.Text, "^[0-9]+$") || txtTelephone.Text.Length > 15)
+            {
+                ShowMessage("Telephone should only contain up to 15 digits.", "Validation Error", MessageBoxIcon.Warning);
+                return false;
+            }
+
+            return true;
+        }
+
+        private void btnCancel_Click(object sender, EventArgs e) => this.Close();
+
+        public void btnEdit_Click(object sender, EventArgs e) => ToggleEditMode(true);
+
+        private async void btnDelete_Click(object sender, EventArgs e)
+        {
+            if (companyId == null)
+            {
+                ShowMessage("No company selected for deletion.", "Warning", MessageBoxIcon.Warning);
+                return;
+            }
+
+            var confirmResult = MessageBox.Show("Are you sure you want to delete this company?",
+                                                "Confirm Delete",
+                                                MessageBoxButtons.YesNo,
+                                                MessageBoxIcon.Warning);
+
+            if (confirmResult != DialogResult.Yes)
+                return;
+
+            try
+            {
+                string query = "DELETE FROM Company WHERE CompanyID = @CompanyID";
+                var parameters = new[] { new SqlParameter("@CompanyID", companyId) };
+
+                int rowsAffected = await DatabaseHelper.ExecuteNonQueryAsync(query, parameters);
+                if (rowsAffected > 0)
+                {
+                    ShowMessage("Company deleted successfully.", "Success");
+                    this.Close();
+                }
+                else
+                {
+                    ShowError("Error deleting the company.");
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Error deleting company: {ex.Message}");
+            }
+        }
+
+        private void ToggleEditMode(bool enable)
+        {
+            txtCompanyName.Enabled = enable;
+            txtAddressLine1.Enabled = enable;
+            txtAddressLine2.Enabled = enable;
+            txtZipCode.Enabled = enable;
+            txtTelephone.Enabled = enable;
+            btnSave.Visible = enable;
+            btnCancel.Visible = enable;
+        }
+
+        private void ShowMessage(string message, string caption, MessageBoxIcon icon = MessageBoxIcon.Information)
+        {
+            MessageBox.Show(message, caption, MessageBoxButtons.OK, icon);
+        }
+
+        private void ShowError(string message)
+        {
+            ShowMessage(message, "Error", MessageBoxIcon.Error);
+        }
+    }
+
+}

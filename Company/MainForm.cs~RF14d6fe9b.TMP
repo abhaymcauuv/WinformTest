@@ -1,0 +1,212 @@
+﻿using System;
+using System.Data;
+using System.Drawing;
+using System.Configuration;
+using System.Windows.Forms;
+using System.Data.SqlClient;
+using System.IO;
+using System.Threading.Tasks;
+
+
+namespace Company
+{
+    public partial class MainForm : Form
+    {
+        public MainForm()
+        {
+            InitializeComponent();
+            LoadCompaniesAsync();
+        }
+
+        private async Task LoadCompaniesAsync()
+        {
+            try
+            {
+                string query = "SELECT CompanyID, CompanyName, AddressLine1, AddressLine2, ZipCode, Telephone FROM Company WHERE IsActive = 1";
+
+                DataTable companies = await DatabaseHelper.ExecuteQueryAsync(query);
+                dataGridViewCompanies.DataSource = companies;
+                AddEditDeleteButtons(dataGridViewCompanies);
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions (log or display error messages)
+                MessageBox.Show($"An error occurred while loading companies: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+
+        private void AddEditDeleteButtons(DataGridView dataGridView)
+        {
+            string viewIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "view.png");
+            if (!dataGridView.Columns.Contains("btnViewContacts"))
+            {
+                DataGridViewImageColumn btnViewContacts = new DataGridViewImageColumn();
+                btnViewContacts.Name = "btnViewContacts";
+                btnViewContacts.HeaderText = "Action";
+                btnViewContacts.Image = Image.FromFile(viewIconPath);
+                btnViewContacts.ToolTipText = "View";
+                dataGridView.Columns.Add(btnViewContacts);
+            }
+
+            string editIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "edit.png");
+            if (!dataGridView.Columns.Contains("btnEdit"))
+            {
+                DataGridViewImageColumn btnEdit = new DataGridViewImageColumn();
+                btnEdit.Name = "btnEdit";
+                btnEdit.HeaderText = "Action";
+                btnEdit.Image = Image.FromFile(editIconPath);
+                btnEdit.ToolTipText = "Edit";
+                dataGridView.Columns.Add(btnEdit);
+            }
+
+            string deleteIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "bin.png");
+            if (!dataGridView.Columns.Contains("btnDelete"))
+            {
+                DataGridViewImageColumn btnDelete = new DataGridViewImageColumn();
+                btnDelete.Name = "btnDelete";
+                btnDelete.HeaderText = "Action";
+                btnDelete.Image = Image.FromFile(deleteIconPath);
+                btnDelete.ToolTipText = "Delete";
+                dataGridView.Columns.Add(btnDelete);
+            }
+
+            dataGridView.CellContentClick += (sender, e) =>
+            {
+                var grid = sender as DataGridView;
+                if (grid != null && e.RowIndex >= 0)
+                {
+                    if (e.ColumnIndex == grid.Columns["btnEdit"].Index)
+                    {
+                        if (grid == dataGridViewCompanies)
+                        {
+                            int companyId = Convert.ToInt32(grid.Rows[e.RowIndex].Cells["CompanyID"].Value);
+                            EditCompany(companyId);
+                        }
+                        else if (grid == dataGridViewContacts)
+                        {
+                            int contactId = Convert.ToInt32(grid.Rows[e.RowIndex].Cells["ContactID"].Value);
+                        }
+                    }
+                    else if (e.ColumnIndex == grid.Columns["btnDelete"].Index)
+                    {
+                        if (grid == dataGridViewCompanies)
+                        {
+                            int companyId = Convert.ToInt32(grid.Rows[e.RowIndex].Cells["CompanyID"].Value);
+                            DeleteCompany(companyId);
+                        }
+                        else if (grid == dataGridViewContacts)
+                        {
+                            int contactId = Convert.ToInt32(grid.Rows[e.RowIndex].Cells["ContactID"].Value);
+                        }
+                    }
+                    else if (e.ColumnIndex == grid.Columns["btnViewContacts"].Index && grid == dataGridViewCompanies)
+                    {
+                        int companyId = Convert.ToInt32(grid.Rows[e.RowIndex].Cells["CompanyID"].Value);
+
+                        FormContactManagement form = new FormContactManagement(companyId);
+                        form.ShowDialog();
+                    }
+                }
+            };
+        }
+
+        private void EditCompany(int companyId)
+        {
+            foreach (Form openForm in Application.OpenForms)
+            {
+                if (openForm is FormCompany)
+                {
+                    openForm.Activate();
+                    return;
+                }
+            }
+
+            FormCompany form = new FormCompany(companyId);
+            form.ShowDialog();
+            LoadCompanies();
+        }
+
+        private void btnCancel_Click(object sender, EventArgs e)
+        {
+            this.Close();
+        }
+
+        private void DeleteCompany(int companyId)
+        {
+            var result = MessageBox.Show($"Are you sure you want to delete Company with ID: {companyId}? This will also delete all associated contacts.",
+                                         "Confirm Deletion",
+                                         MessageBoxButtons.YesNo,
+                                         MessageBoxIcon.Warning);
+
+            if (result == DialogResult.Yes)
+            {
+                string contactQuery = $"UPDATE Contact SET IsActive = 0 WHERE CompanyID = {companyId}";
+                DatabaseHelper.ExecuteNonQuery(contactQuery);
+
+                string companyQuery = $"UPDATE Company SET IsActive = 0 WHERE CompanyID = {companyId}";
+                DatabaseHelper.ExecuteNonQuery(companyQuery);
+
+                LoadCompanies();
+
+                MessageBox.Show("Company and associated contacts deleted successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private void btnAddCompany_Click(object sender, EventArgs e)
+        {
+            FormCompany form = new FormCompany();
+            form.ShowDialog();
+            LoadCompanies();
+        }
+
+        private void btnSearch_Click(object sender, EventArgs e)
+        {
+            string searchText = txtSearch.Text.Trim();
+            if (!string.IsNullOrEmpty(searchText))
+            {
+                SearchCompanies(searchText);
+            }
+            else
+            {
+                LoadCompanies();
+            }
+        }
+
+        private void SearchCompanies(string searchText)
+        {
+            string query = "SELECT CompanyID, CompanyName, AddressLine1, AddressLine2, ZipCode, Telephone " +
+                           "FROM Company WHERE IsActive = 1 AND (CompanyName LIKE @SearchText OR AddressLine1 LIKE @SearchText)";
+            string connectionString = ConfigurationManager.ConnectionStrings["CompanyDb"].ConnectionString;
+
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                using (SqlCommand command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@SearchText", $"%{searchText}%");
+
+                    try
+                    {
+                        connection.Open();
+                        DataTable companies = new DataTable();
+                        using (SqlDataAdapter adapter = new SqlDataAdapter(command))
+                        {
+                            adapter.Fill(companies);
+                        }
+                        dataGridViewCompanies.DataSource = companies;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error searching companies: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
+        }
+
+        private void btnReset_Click(object sender, EventArgs e)
+        {
+            txtSearch.Text = string.Empty;
+            LoadCompanies();
+        }
+    }
+}
