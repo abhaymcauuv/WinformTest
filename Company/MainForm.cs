@@ -123,12 +123,9 @@ namespace Company
                 if (confirmResult != DialogResult.Yes)
                     return;
 
-                string deactivateContacts = "UPDATE Contact SET IsActive = 0 WHERE CompanyID = @CompanyId";
-                string deactivateCompany = "UPDATE Company SET IsActive = 0 WHERE CompanyID = @CompanyId";
+                string deactivateCompany = "UPDATE Contact SET IsActive = 0 WHERE CompanyID = @CompanyId; UPDATE Company SET IsActive = 0 WHERE CompanyID = @CompanyId;";
 
                 var parameters = new[] { new SqlParameter("@CompanyId", companyId) };
-
-                await DatabaseHelper.ExecuteNonQueryAsync(deactivateContacts, parameters);
                 await DatabaseHelper.ExecuteNonQueryAsync(deactivateCompany, parameters);
 
                 await LoadCompaniesAsync();

@@ -30,7 +30,7 @@ namespace Company
         {
             try
             {
-                const string query = "SELECT * FROM Company WHERE CompanyID = @CompanyID";
+                const string query = "SELECT CompanyName, AddressLine1, AddressLine2, ZipCode, Telephone FROM Company WHERE CompanyID = @CompanyID";
                 var parameters = new[] { new SqlParameter("@CompanyID", companyId) };
 
                 DataTable company = await DatabaseHelper.ExecuteQueryAsync(query, parameters);
